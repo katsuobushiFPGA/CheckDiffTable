@@ -179,18 +179,5 @@ namespace CheckDiffTable.Repositories
                 throw;
             }
         }
-
-        private static void AddParameters(NpgsqlCommand command, LatestDataEntity entity)
-        {
-            command.Parameters.AddWithValue("@id", entity.Id);
-            command.Parameters.AddWithValue("@entityId", entity.EntityId);
-            command.Parameters.AddWithValue("@name", entity.Name);
-            command.Parameters.AddWithValue("@description", (object?)entity.Description ?? DBNull.Value);
-            command.Parameters.AddWithValue("@status", entity.Status);
-            command.Parameters.AddWithValue("@amount", entity.Amount);
-            command.Parameters.AddWithValue("@transactionType", entity.TransactionType);
-            command.Parameters.AddWithValue("@createdAt", entity.CreatedAt);
-            command.Parameters.AddWithValue("@updatedAt", entity.UpdatedAt);
-        }
     }
 }
