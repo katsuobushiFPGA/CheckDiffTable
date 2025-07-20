@@ -14,7 +14,7 @@ namespace CheckDiffTable.Repositories
 {
     /// <summary>
     /// トランザクションテーブルリポジトリの実装クラス
-    /// PostgreSQLデータベースからトランザクションデータを読み取る機能を提供
+    /// PostgreSQLデータベースからトランザクションデータを読み取る
     /// </summary>
     public class TransactionRepository : ITransactionRepository
     {

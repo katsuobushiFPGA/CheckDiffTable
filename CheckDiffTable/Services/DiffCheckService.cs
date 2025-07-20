@@ -14,7 +14,7 @@ namespace CheckDiffTable.Services
 {
     /// <summary>
     /// 差分チェック・更新サービスの実装クラス
-    /// トランザクションテーブルと最新データテーブル間の差分をチェックし、効率的な一括処理を提供
+    /// トランザクションテーブルと最新データテーブル間の差分をチェックし一括処理をする
     /// </summary>
     public class DiffCheckService : IDiffCheckService
     {

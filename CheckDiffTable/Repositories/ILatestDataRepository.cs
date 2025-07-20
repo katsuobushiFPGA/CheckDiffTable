@@ -7,7 +7,7 @@ namespace CheckDiffTable.Repositories
 {
     /// <summary>
     /// 最新データテーブルリポジトリのインターフェース
-    /// 最新データの管理（取得、登録、更新、一括操作）を提供
+    /// 最新データの管理（取得、登録、更新、一括操作）
     /// </summary>
     public interface ILatestDataRepository
     {

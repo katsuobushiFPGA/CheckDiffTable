@@ -7,7 +7,7 @@ namespace CheckDiffTable.Repositories
 {
     /// <summary>
     /// トランザクションテーブルリポジトリのインターフェース
-    /// トランザクションデータの読み取り専用操作を提供
+    /// トランザクションデータの読み取り専用操作
     /// </summary>
     public interface ITransactionRepository
     {

@@ -15,7 +15,7 @@ namespace CheckDiffTable.Repositories
 {
     /// <summary>
     /// 最新データテーブルリポジトリの実装クラス
-    /// PostgreSQLデータベースでの最新データの管理（取得、登録、更新、一括操作）を提供
+    /// PostgreSQLデータベースでの最新データの管理（取得、登録、更新、一括操作）
     /// </summary>
     public class LatestDataRepository : ILatestDataRepository
     {
@@ -47,7 +47,7 @@ namespace CheckDiffTable.Repositories
         {
             if (!transactionKeys.Any()) return new List<LatestDataEntity>();
 
-            // ROW構文とIN句を使った複合主キー検索（PostgreSQL標準の方法）
+            // ROW構文とIN句を使った複合主キー検索
             var rowValues = string.Join(", ", transactionKeys.Select((_, index) => $"(@id{index}, @entityId{index})"));
             
             var sql = $@"
