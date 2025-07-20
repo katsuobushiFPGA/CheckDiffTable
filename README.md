@@ -9,15 +9,15 @@
 ```
 CheckDiffTable/
 ├── CheckDiffTable.csproj          # プロジェクトファイル
-├── Program.cs                     # メインエントリーポイント
-├── appsettings.json              # 設定ファイル
+├── Program.cs                     # メインエントリーポイント（NpgsqlDataSource設定含む）
+├── appsettings.json              # 設定ファイル（データベース接続・タイムアウト設定）
 ├── database_schema.sql           # データベーススキーマ
 ├── Configuration/
 │   └── BatchProcessingOptions.cs # バッチ処理設定オプション
 ├── Models/
 │   ├── TransactionEntity.cs      # トランザクションエンティティ
 │   ├── LatestDataEntity.cs       # 最新データエンティティ
-│   ├── DatabaseConstants.cs     # データベース定数
+│   ├── DatabaseConstants.cs     # データベース定数（JST時刻対応）
 │   └── Results/                  # 処理結果クラス群
 │       ├── ProcessAction.cs     # 処理アクション列挙型
 │       ├── ProcessResult.cs     # 個別処理結果クラス
@@ -30,7 +30,6 @@ CheckDiffTable/
 ├── Services/
 │   ├── IDiffCheckService.cs      # 差分チェックサービスインターフェース
 │   └── DiffCheckService.cs       # 差分チェック・更新サービス
-    └── DiffCheckService.cs       # 差分チェック・更新サービス
 ```
 
 ## 主な機能
@@ -59,7 +58,18 @@ CheckDiffTable/
 - **差分なしトランザクション削除**: バッチ処理内で差分がなかったトランザクションを自動削除
 - **バッチ単位削除**: 効率的な一括削除処理
 
-### 6. 監視・ログ機能
+### 6. データベース接続管理
+- **NpgsqlDataSource使用**: 接続プールによる効率的なデータベース接続管理
+- **接続タイムアウト制御**: appsettings.jsonでのタイムアウト設定
+- **包括的エラーハンドリング**: データベース接続、タイムアウト、一般エラーの個別対応
+- **リソース自動解放**: プログラム終了時の適切なリソース解放
+
+### 7. 時刻管理機能
+- **JST対応**: DatabaseConstants.DateTimeHelperによる日本標準時サポート
+- **タイムゾーン設定**: appsettings.jsonでの設定可能なタイムゾーン
+- **統一時刻管理**: 全データの作成・更新時刻をJSTで統一
+
+### 8. 監視・ログ機能
 - 処理時間の測定とログ出力
 - 処理件数のサマリー表示（新規/更新/スキップ/削除/エラー）
 - 詳細なエラーハンドリングとログ出力
@@ -67,9 +77,10 @@ CheckDiffTable/
 
 ## 使用技術
 
-- **C# .NET 8.0**
-- **Npgsql**: PostgreSQL用データアクセスライブラリ
-- **Microsoft.Extensions**: DI、Configuration、Logging
+- **C# .NET 8.0**: 高性能なクロスプラットフォーム開発環境
+- **Npgsql**: PostgreSQL用データアクセスライブラリ（NpgsqlDataSource使用）
+- **Microsoft.Extensions**: DI、Configuration、Logging（ホストビルダー使用）
+- **PostgreSQL**: 高性能データベース（ROW構文、複合主キー対応）
 
 ## データベース設定
 
@@ -93,7 +104,10 @@ PostgreSQLサーバーが稼働していること
    ```json
    {
      "ConnectionStrings": {
-       "DefaultConnection": "Host=localhost;Database=checkdiff_db;Username=postgres;Password=your_password"
+       "DefaultConnection": "Host=localhost;Database=checkdiff_db;Username=postgres;Password=your_password;Command Timeout=30;Timeout=15;Timezone=Asia/Tokyo"
+     },
+     "BatchProcessing": {
+       "BatchSize": 1000
      }
    }
    ```
@@ -234,12 +248,22 @@ All batches completed including cleanup of transactions with no differences
 - **最小限のデータベースアクセス**: 必要なデータのみを一括取得
 - **バッチ内完結処理**: 取得→処理→更新→削除をバッチ単位で実行
 
+### データベース接続最適化
+- **NpgsqlDataSource使用**: 接続プールによる効率的なリソース管理
+- **タイムアウト制御**: 接続・コマンドタイムアウトの適切な設定
+- **リソース管理**: 適切なリソース解放と例外処理
+- **エラー分離**: データベースエラー種別による適切な処理分岐
+
 ## エラーハンドリング
 
+- **包括的例外処理**: NpgsqlException、TimeoutException、一般Exceptionの個別対応
+- **データベース接続エラー**: 接続・認証エラーの詳細分析と適切な終了コード
+- **タイムアウトエラー**: 処理・接続タイムアウトの個別検出と対応
 - **トランザクション単位のエラー分離**: 一部エラーでも他の処理を継続
-- **詳細なエラーログ**: 問題箇所の特定が容易
+- **詳細なエラーログ**: 問題箇所の特定が容易な詳細ログ出力
 - **部分的失敗対応**: 処理可能な分のみ更新
 - **処理結果詳細追跡**: 各トランザクションの処理結果を詳細に記録
+- **リソース解放保証**: finallyブロックによる確実なリソース解放
 
 ## 設定管理
 
@@ -247,7 +271,7 @@ All batches completed including cleanup of transactions with no differences
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Database=checkdiff_db;Username=postgres;Password=password"
+    "DefaultConnection": "Host=localhost;Database=checkdiff_db;Username=postgres;Password=password;Command Timeout=30;Timeout=15;Timezone=Asia/Tokyo"
   },
   "Logging": {
     "LogLevel": {
@@ -264,6 +288,9 @@ All batches completed including cleanup of transactions with no differences
 
 ### 設定項目
 - **ConnectionStrings.DefaultConnection**: PostgreSQL接続文字列
+  - **Command Timeout**: コマンド実行タイムアウト（秒）
+  - **Timeout**: 接続タイムアウト（秒）
+  - **Timezone**: データベースのタイムゾーン設定
 - **BatchProcessing.BatchSize**: バッチサイズ（デフォルト: 1000）
 - **Logging.LogLevel**: ログレベル設定
 
@@ -296,8 +323,10 @@ All batches completed including cleanup of transactions with no differences
 ### 設計パターン
 - **Repository Pattern**: データアクセスの統一
 - **Options Pattern**: 設定管理
-- **Dependency Injection**: 疎結合設計
+- **Dependency Injection**: 疎結合設計（ホストビルダー使用）
 - **Batch Processing Pattern**: 効率的な大量データ処理
+- **Data Source Pattern**: NpgsqlDataSourceによる接続プール管理
+- **Error Handling Pattern**: 包括的例外処理による堅牢性確保
 
 ## トラブルシューティング
 
@@ -305,22 +334,32 @@ All batches completed including cleanup of transactions with no differences
 
 1. **接続エラー**
    - PostgreSQLサーバーの起動確認
-   - 接続文字列の確認
+   - 接続文字列の確認（タイムアウト設定含む）
    - ファイアウォール設定の確認
+   - 認証情報の確認
 
 2. **パフォーマンス問題**
    - バッチサイズの調整（大きすぎる場合は小さく）
    - インデックスの確認
    - データベースリソースの監視
+   - 接続プールサイズの調整
 
-3. **メモリ不足**
+3. **タイムアウトエラー**
+   - Command Timeoutの調整（appsettings.json）
+   - 接続Timeoutの調整（appsettings.json）
+   - ネットワーク状況の確認
+   - クエリ最適化の検討
+
+4. **メモリ不足**
    - バッチサイズを小さく設定
    - 処理対象データ量の確認
+   - システムリソースの監視
 
-4. **処理結果が期待と異なる**
+5. **処理結果が期待と異なる**
    - ログ出力の詳細確認
    - 差分チェックロジックの確認
    - データベース状態の確認
+   - JST時刻設定の確認
 - 処理時間の測定とログ出力
 - 処理件数のサマリー表示
 - 詳細なエラーハンドリングとログ出力
