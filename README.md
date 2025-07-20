@@ -23,7 +23,12 @@ CheckDiffTable/
 
 ## 主な機能
 
-### 1. 効率的な一括処理
+### 1. 複合主キー設計
+- **トランザクション関係性の明確化**: (id, entity_id) 複合主キーによる正確なデータ対応
+- **データ整合性の向上**: 単一entity_idに対する複数トランザクションの追跡が可能
+- **PostgreSQL ROW構文**: 複合主キーでの効率的なバッチ検索を実装
+
+### 2. 効率的な一括処理
 - **最新トランザクション一括取得**: WITH句を使用したエンティティごとの最新データ取得
 - **関連データ一括取得**: ANY演算子を使用した効率的なデータ取得
 - **一括UPSERT**: PostgreSQLのON CONFLICT構文を使用した高速更新
@@ -82,26 +87,17 @@ PostgreSQLサーバーが稼働していること
 
 ## 実行方法
 
-### 1. 一括処理モード（推奨）
+### 一括処理モード
 ```bash
-dotnet run              # デフォルト：一括処理（設定ファイルのバッチサイズ使用）
-dotnet run batch        # 明示的に一括処理指定（設定ファイルのバッチサイズ使用）
-dotnet run batch 500    # バッチサイズ500で一括処理
-dotnet run batch 2000   # バッチサイズ2000で一括処理
+dotnet run              # appsettings.jsonで設定されたバッチサイズで実行
 ```
 
-### 2. 特定エンティティ処理
-```bash
-dotnet run 1        # EntityID=1のみ処理
-```
-
-### 3. バッチサイズ設定
+### バッチサイズ設定
 appsettings.jsonで設定可能：
 ```json
 {
   "BatchProcessing": {
-    "BatchSize": 1000,      // デフォルトバッチサイズ
-    "MaxBatchSize": 10000   // 最大バッチサイズ（セキュリティ上限）
+    "BatchSize": 1000      // デフォルトバッチサイズ
   }
 }
 ```
@@ -168,11 +164,34 @@ VALUES (1, '商品A最新版', '商品Aの最新説明', 'active', 1800.00, 'sal
 ### transaction_table（トランザクションテーブル）
 | カラム名 | 型 | 説明 |
 |---------|-----|------|
-| id | SERIAL | 主キー |
-| entity_id | INTEGER | エンティティID |
+| id | SERIAL | 主キー（自動採番） |
+| entity_id | INTEGER | エンティティID（業務キー） |
 | name | VARCHAR(100) | 名前 |
 | description | TEXT | 説明（NULL可） |
 | status | VARCHAR(20) | ステータス |
+| amount | DECIMAL(10,2) | 金額 |
+| transaction_type | VARCHAR(20) | トランザクションタイプ |
+| created_at | TIMESTAMP | 作成日時 |
+| updated_at | TIMESTAMP | 更新日時 |
+
+### latest_data_table（最新データテーブル）
+| カラム名 | 型 | 説明 |
+|---------|-----|------|
+| id | INTEGER | ID（transaction_tableと対応） |
+| entity_id | INTEGER | エンティティID（業務キー） |
+| name | VARCHAR(100) | 名前 |
+| description | TEXT | 説明（NULL可） |
+| status | VARCHAR(20) | ステータス |
+| amount | DECIMAL(10,2) | 金額 |
+| transaction_type | VARCHAR(20) | トランザクションタイプ |
+| created_at | TIMESTAMP | 作成日時 |
+| updated_at | TIMESTAMP | 更新日時 |
+| **主キー** | **(id, entity_id)** | **複合主キー** |
+
+### 複合主キー設計の意義
+- **関係性の明確化**: transaction_tableとlatest_data_tableの対応関係を(id, entity_id)で正確に管理
+- **データ追跡性**: 同一entity_idでも異なるtransaction_idのデータを区別可能
+- **整合性保証**: 一意性制約により重複データの防止
 | amount | DECIMAL(10,2) | 金額 |
 | transaction_type | VARCHAR(20) | トランザクション種別 |
 | created_at | TIMESTAMP | 作成日時 |

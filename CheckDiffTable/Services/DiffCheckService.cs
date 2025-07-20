@@ -14,60 +14,115 @@ namespace CheckDiffTable.Services
     /// </summary>
     public interface IDiffCheckService
     {
-        Task<ProcessResult> ProcessEntityAsync(int entityId);
+        /// <summary>
+        /// 全エンティティをバッチ処理で効率的に差分チェック・更新を行う
+        /// </summary>
+        /// <param name="batchSize">バッチサイズ。未指定の場合は設定値またはデフォルト値を使用</param>
+        /// <returns>処理結果（成功/失敗、件数、詳細情報を含む）</returns>
         Task<BatchProcessResult> ProcessAllEntitiesBatchAsync(int? batchSize = null);
-        Task<List<ProcessResult>> ProcessAllEntitiesAsync();
     }
 
     /// <summary>
-    /// 処理結果
+    /// 個別エンティティの処理結果を格納するクラス
     /// </summary>
     public class ProcessResult
     {
+        /// <summary>エンティティID</summary>
         public int EntityId { get; set; }
+        
+        /// <summary>実行されたアクション（新規登録、更新、スキップ、エラー）</summary>
         public ProcessAction Action { get; set; }
+        
+        /// <summary>処理の成功/失敗フラグ</summary>
         public bool Success { get; set; }
+        
+        /// <summary>処理結果の詳細メッセージ</summary>
         public string? Message { get; set; }
+        
+        /// <summary>関連するトランザクションID</summary>
         public int? TransactionId { get; set; }
     }
 
     /// <summary>
-    /// 一括処理結果
+    /// バッチ処理全体の結果を格納するクラス
     /// </summary>
     public class BatchProcessResult
     {
+        /// <summary>処理対象の総エンティティ数</summary>
         public int TotalEntities { get; set; }
+        
+        /// <summary>新規登録された件数</summary>
         public int InsertCount { get; set; }
+        
+        /// <summary>更新された件数</summary>
         public int UpdateCount { get; set; }
+        
+        /// <summary>差分なしでスキップされた件数</summary>
         public int SkipCount { get; set; }
+        
+        /// <summary>エラーが発生した件数</summary>
         public int ErrorCount { get; set; }
+        
+        /// <summary>削除された未処理トランザクション件数</summary>
+        public int DeletedCount { get; set; }
+        
+        /// <summary>バッチ処理全体の成功/失敗フラグ</summary>
         public bool Success { get; set; }
+        
+        /// <summary>処理結果のサマリーメッセージ</summary>
         public string? Message { get; set; }
+        
+        /// <summary>各エンティティの詳細処理結果リスト</summary>
         public List<ProcessResult> Details { get; set; } = new();
+        
+        /// <summary>処理にかかった時間</summary>
         public TimeSpan ProcessingTime { get; set; }
     }
 
     /// <summary>
-    /// 処理アクション
+    /// エンティティに対して実行されたアクションの種類を表す列挙型
     /// </summary>
     public enum ProcessAction
     {
-        None,       // 処理なし（差分なし）
-        Insert,     // 新規登録
-        Update,     // 更新
-        Error       // エラー
+        /// <summary>処理なし（データに差分がないためスキップ）</summary>
+        None,
+        
+        /// <summary>新規登録（既存データが存在しない）</summary>
+        Insert,
+        
+        /// <summary>更新（既存データと差分があるため更新）</summary>
+        Update,
+        
+        /// <summary>エラー（処理中に例外が発生）</summary>
+        Error
     }
 
     /// <summary>
-    /// 差分チェック・更新サービス（トランザクションテーブルは毎回トランケート前提）
+    /// 差分チェック・更新サービスの実装クラス
+    /// トランザクションテーブルと最新データテーブル間の差分をチェックし、効率的な一括処理を提供
     /// </summary>
     public class DiffCheckService : IDiffCheckService
     {
+        /// <summary>トランザクションデータアクセス用リポジトリ</summary>
         private readonly ITransactionRepository _transactionRepository;
+        
+        /// <summary>最新データテーブルアクセス用リポジトリ</summary>
         private readonly ILatestDataRepository _latestDataRepository;
+        
+        /// <summary>ログ出力用インスタンス</summary>
         private readonly ILogger<DiffCheckService> _logger;
+        
+        /// <summary>バッチ処理設定オプション</summary>
         private readonly BatchProcessingOptions _batchOptions;
 
+        /// <summary>
+        /// DiffCheckServiceのコンストラクタ
+        /// 依存関係の注入により、リポジトリ、ログ、設定オプションを受け取る
+        /// </summary>
+        /// <param name="transactionRepository">トランザクションデータアクセス用リポジトリ</param>
+        /// <param name="latestDataRepository">最新データテーブルアクセス用リポジトリ</param>
+        /// <param name="logger">ログ出力用インスタンス</param>
+        /// <param name="batchOptions">バッチ処理設定オプション</param>
         public DiffCheckService(
             ITransactionRepository transactionRepository,
             ILatestDataRepository latestDataRepository,
@@ -80,6 +135,12 @@ namespace CheckDiffTable.Services
             _batchOptions = batchOptions.Value;
         }
 
+        /// <summary>
+        /// 全エンティティをバッチ処理で効率的に差分チェック・更新を行う
+        /// トランザクションテーブルから最新データを取得し、最新データテーブルと比較して差分があるものを一括更新する
+        /// </summary>
+        /// <param name="batchSize">バッチサイズ。未指定の場合は設定値またはデフォルト値を使用</param>
+        /// <returns>処理結果（成功/失敗、件数、詳細情報を含む）</returns>
         public async Task<BatchProcessResult> ProcessAllEntitiesBatchAsync(int? batchSize = null)
         {
             var startTime = DateTime.UtcNow;
@@ -91,8 +152,9 @@ namespace CheckDiffTable.Services
                 var effectiveBatchSize = batchSize ?? _batchOptions.GetValidatedBatchSize();
                 _logger.LogInformation("Starting batch processing with batch size: {BatchSize}", effectiveBatchSize);
 
-                // 1. トランザクションテーブルから最新トランザクションを一括取得（効率化）
-                var latestTransactions = await _transactionRepository.GetLatestTransactionsByEntityAsync();
+                // 1. トランザクションテーブルから全てのトランザクションを一括取得（効率化）
+                // N+1問題を回避するため、個別のクエリではなく一括取得を行う
+                var latestTransactions = await _transactionRepository.GetAllTransactionsAsync();
                 if (!latestTransactions.Any())
                 {
                     _logger.LogInformation("No transactions found");
@@ -104,23 +166,39 @@ namespace CheckDiffTable.Services
                 result.TotalEntities = latestTransactions.Count;
                 _logger.LogInformation("Found {Count} entities with transactions", result.TotalEntities);
 
+                // データサイズに応じて処理方法を選択
                 // N+1問題回避：バッチ単位でデータベースアクセスを制御
                 // 小さなデータセットの場合は一括処理、大きなデータセットはバッチ分割処理
                 if (latestTransactions.Count <= effectiveBatchSize)
                 {
                     // 全件一括処理（最も効率的）
+                    // メモリ使用量が許容範囲内の場合、最も高速な処理を実行
                     await ProcessTransactionBatch(latestTransactions, result);
                 }
                 else
                 {
                     // バッチ分割処理（メモリ効率重視）
+                    // 大量データの場合、メモリ使用量を抑えるためバッチ単位で処理
                     await ProcessTransactionsBatched(latestTransactions, effectiveBatchSize, result);
                 }
 
+                // 6. 未処理トランザクションの削除
+                // 処理されたトランザクションキーを収集
+                var processedTransactionKeys = latestTransactions
+                    .Where(t => result.Details.Any(d => d.TransactionId == t.Id && d.EntityId == t.EntityId))
+                    .Select(t => (t.Id, t.EntityId))
+                    .ToList();
+
+                var deletedCount = await _transactionRepository.DeleteUnprocessedTransactionsAsync(processedTransactionKeys);
+                result.DeletedCount = deletedCount;
+                _logger.LogInformation("Cleaned up {DeletedCount} unprocessed transactions from transaction table", deletedCount);
+
+                // 処理完了：結果サマリーの生成とログ出力
                 result.ProcessingTime = DateTime.UtcNow - startTime;
                 result.Message = $"一括処理完了: {result.TotalEntities}エンティティ処理 " +
                                $"(新規:{result.InsertCount}, 更新:{result.UpdateCount}, " +
                                $"スキップ:{result.SkipCount}, エラー:{result.ErrorCount}) " +
+                               $"削除:{deletedCount}件 " +
                                $"処理時間:{result.ProcessingTime.TotalMilliseconds:F0}ms";
 
                 _logger.LogInformation(result.Message);
@@ -128,6 +206,7 @@ namespace CheckDiffTable.Services
             }
             catch (Exception ex)
             {
+                // 予期しないエラーが発生した場合の処理
                 result.Success = false;
                 result.Message = $"一括処理中にエラーが発生しました: {ex.Message}";
                 result.ProcessingTime = DateTime.UtcNow - startTime;
@@ -137,8 +216,13 @@ namespace CheckDiffTable.Services
         }
 
         /// <summary>
-        /// トランザクションをバッチ単位で処理
+        /// トランザクションをバッチ単位で処理する
+        /// 大量データを効率的に処理するため、指定されたバッチサイズごとに分割して処理を行う
         /// </summary>
+        /// <param name="transactions">処理対象のトランザクションリスト</param>
+        /// <param name="batchSize">1回の処理で扱うトランザクション数</param>
+        /// <param name="result">処理結果を蓄積するオブジェクト</param>
+        /// <returns>非同期処理タスク</returns>
         private async Task ProcessTransactionsBatched(List<TransactionEntity> transactions, int batchSize, BatchProcessResult result)
         {
             for (int i = 0; i < transactions.Count; i += batchSize)
@@ -152,21 +236,31 @@ namespace CheckDiffTable.Services
         }
 
         /// <summary>
-        /// 1つのバッチを処理
+        /// 1つのバッチ内のトランザクションを処理する
+        /// 既存データとの差分チェックを行い、新規登録・更新・スキップの判定を行う
+        /// データベースアクセスを最小限に抑えるため、バッチ内の全てのデータを一括取得・一括更新する
         /// </summary>
+        /// <param name="batchTransactions">処理対象のトランザクションバッチ</param>
+        /// <param name="result">処理結果を蓄積するオブジェクト</param>
+        /// <returns>非同期処理タスク</returns>
         private async Task ProcessTransactionBatch(List<TransactionEntity> batchTransactions, BatchProcessResult result)
         {
             // 2. 関連する最新データを一括取得（効率化）
-            var entityIds = batchTransactions.Select(t => t.EntityId).ToList();
-            var existingLatestData = await _latestDataRepository.GetByEntityIdsAsync(entityIds);
-            var existingLatestDataDict = existingLatestData.ToDictionary(e => e.EntityId);
+            // バッチ内の全（id, entity_id）複合主キーに対する既存データを一括取得し、N+1問題を回避
+            var transactionKeys = batchTransactions.Select(t => (t.Id, t.EntityId)).ToList();
+            var existingLatestData = await _latestDataRepository.GetByTransactionKeysAsync(transactionKeys);
+            // 高速検索のため複合主キーでDictionary形式に変換
+            var existingLatestDataDict = existingLatestData.ToDictionary(e => (e.Id, e.EntityId));
 
             // 3. 差分チェックと処理データ準備
+            // 各トランザクションに対して既存データとの差分をチェックし、
+            // 新規登録・更新・スキップの分類を行う
             var toInsert = new List<LatestDataEntity>();
             var toUpdate = new List<LatestDataEntity>();
 
             foreach (var transaction in batchTransactions)
             {
+                // 各トランザクションの処理結果を記録するオブジェクトを作成
                 var processResult = new ProcessResult
                 {
                     EntityId = transaction.EntityId,
@@ -176,14 +270,15 @@ namespace CheckDiffTable.Services
 
                 try
                 {
+                    // トランザクションデータを最新データエンティティ形式に変換
                     var newLatestData = LatestDataEntity.FromTransaction(transaction);
 
-                    if (existingLatestDataDict.TryGetValue(transaction.EntityId, out var existingData))
+                    if (existingLatestDataDict.TryGetValue((transaction.Id, transaction.EntityId), out var existingData))
                     {
                         // 既存データありの場合：差分チェック
                         if (existingData.HasDifference(newLatestData))
                         {
-                            // 差分あり：更新
+                            // 差分あり：更新対象リストに追加
                             newLatestData.CreatedAt = existingData.CreatedAt; // 作成日時は保持
                             newLatestData.UpdatedAt = DateTime.UtcNow;
                             toUpdate.Add(newLatestData);
@@ -194,7 +289,7 @@ namespace CheckDiffTable.Services
                         }
                         else
                         {
-                            // 差分なし：スキップ
+                            // 差分なし：処理をスキップ
                             processResult.Action = ProcessAction.None;
                             processResult.Message = "差分なし - スキップ";
                             result.SkipCount++;
@@ -202,7 +297,7 @@ namespace CheckDiffTable.Services
                     }
                     else
                     {
-                        // 既存データなし：新規登録
+                        // 既存データなし：新規登録対象リストに追加
                         toInsert.Add(newLatestData);
 
                         processResult.Action = ProcessAction.Insert;
@@ -212,6 +307,7 @@ namespace CheckDiffTable.Services
                 }
                 catch (Exception ex)
                 {
+                    // 個別トランザクション処理でのエラーをログに記録
                     _logger.LogError(ex, "Error processing transaction {TransactionId} for entity {EntityId}",
                         transaction.Id, transaction.EntityId);
 
@@ -221,10 +317,13 @@ namespace CheckDiffTable.Services
                     result.ErrorCount++;
                 }
 
+                // 各トランザクションの処理結果を詳細リストに追加
                 result.Details.Add(processResult);
             }
 
             // 4. 一括データベース操作（効率化）
+            // 新規登録・更新対象データがある場合、一括でデータベースに反映
+            // 個別のINSERT/UPDATEではなく、UPSERT操作で効率化
             if (toInsert.Any() || toUpdate.Any())
             {
                 var allToUpsert = toInsert.Concat(toUpdate).ToList();
@@ -232,135 +331,6 @@ namespace CheckDiffTable.Services
                 _logger.LogInformation("Bulk upserted {Count} records ({Insert} inserts, {Update} updates)",
                     allToUpsert.Count, toInsert.Count, toUpdate.Count);
             }
-        }
-
-        public async Task<ProcessResult> ProcessEntityAsync(int entityId)
-        {
-            try
-            {
-                _logger.LogInformation("Processing entity {EntityId}", entityId);
-
-                // トランザクションテーブルから最新データを取得
-                var latestTransaction = await _transactionRepository.GetLatestByEntityIdAsync(entityId);
-                if (latestTransaction == null)
-                {
-                    _logger.LogWarning("No transaction found for entity {EntityId}", entityId);
-                    return new ProcessResult
-                    {
-                        EntityId = entityId,
-                        Action = ProcessAction.None,
-                        Success = true,
-                        Message = "トランザクションデータが見つかりません"
-                    };
-                }
-
-                // 最新データテーブルから既存データを取得
-                var existingLatest = await _latestDataRepository.GetByEntityIdAsync(entityId);
-
-                // トランザクションデータを最新データエンティティに変換
-                var newLatestData = LatestDataEntity.FromTransaction(latestTransaction);
-
-                if (existingLatest == null)
-                {
-                    // データが存在しない場合：新規登録
-                    await _latestDataRepository.InsertAsync(newLatestData);
-
-                    _logger.LogInformation("Inserted new data for entity {EntityId}", entityId);
-
-                    return new ProcessResult
-                    {
-                        EntityId = entityId,
-                        Action = ProcessAction.Insert,
-                        Success = true,
-                        Message = "新規データを登録しました",
-                        TransactionId = latestTransaction.Id
-                    };
-                }
-
-                // 差分チェック
-                if (existingLatest.HasDifference(newLatestData))
-                {
-                    // 差分がある場合：更新
-                    newLatestData.CreatedAt = existingLatest.CreatedAt; // 作成日時は保持
-                    newLatestData.UpdatedAt = DateTime.UtcNow; // 更新日時を現在時刻に設定
-
-                    await _latestDataRepository.UpdateAsync(newLatestData);
-
-                    _logger.LogInformation("Updated data for entity {EntityId}", entityId);
-
-                    return new ProcessResult
-                    {
-                        EntityId = entityId,
-                        Action = ProcessAction.Update,
-                        Success = true,
-                        Message = "データを更新しました",
-                        TransactionId = latestTransaction.Id
-                    };
-                }
-                else
-                {
-                    // 差分がない場合：処理なし
-                    _logger.LogInformation("No difference found for entity {EntityId}", entityId);
-
-                    return new ProcessResult
-                    {
-                        EntityId = entityId,
-                        Action = ProcessAction.None,
-                        Success = true,
-                        Message = "差分なし - 処理をスキップしました",
-                        TransactionId = latestTransaction.Id
-                    };
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error processing entity {EntityId}", entityId);
-
-                return new ProcessResult
-                {
-                    EntityId = entityId,
-                    Action = ProcessAction.Error,
-                    Success = false,
-                    Message = $"処理中にエラーが発生しました: {ex.Message}"
-                };
-            }
-        }
-
-        public async Task<List<ProcessResult>> ProcessAllEntitiesAsync()
-        {
-            var results = new List<ProcessResult>();
-
-            try
-            {
-                _logger.LogInformation("Starting individual processing of all entities");
-
-                // トランザクションテーブルから最新トランザクションを一括取得
-                var latestTransactions = await _transactionRepository.GetLatestTransactionsByEntityAsync();
-                if (!latestTransactions.Any())
-                {
-                    _logger.LogInformation("No transactions found");
-                    return results;
-                }
-
-                _logger.LogInformation("Found {Count} entities with transactions", latestTransactions.Count);
-
-                // 各エンティティを個別に処理
-                foreach (var transaction in latestTransactions)
-                {
-                    var result = await ProcessEntityAsync(transaction.EntityId);
-                    results.Add(result);
-                }
-
-                var summary = results.GroupBy(r => r.Action).ToDictionary(g => g.Key, g => g.Count());
-                _logger.LogInformation("Individual processing completed. Results: {Summary}",
-                    string.Join(", ", summary.Select(kvp => $"{kvp.Key}:{kvp.Value}")));
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error in individual processing");
-            }
-
-            return results;
         }
     }
 }

@@ -11,22 +11,33 @@ using System.Linq;
 
 namespace CheckDiffTable
 {
+    /// <summary>
+    /// アプリケーションのメインクラス
+    /// トランザクション差分チェック・更新システムのエントリーポイント
+    /// </summary>
     class Program
     {
-        static async Task Main(string[] args)
+        /// <summary>
+        /// アプリケーションのメインメソッド
+        /// 依存関係注入の設定、サービスの初期化、バッチ処理の実行を行う
+        /// </summary>
+        /// <returns>非同期処理タスク</returns>
+        static async Task Main()
         {
-            // ホストビルダーの設定
-            var host = Host.CreateDefaultBuilder(args)
+            // ホストビルダーの設定：アプリケーションの構成管理、依存関係注入、ログ設定
+            var host = Host.CreateDefaultBuilder()
                 .ConfigureAppConfiguration((context, config) =>
                 {
+                    // アプリケーション設定ファイルの読み込み
                     config.AddJsonFile("appsettings.json", optional: false, reloadOnChange: true);
                 })
                 .ConfigureServices((context, services) =>
                 {
-                    // 設定の登録
+                    // 設定オプションの登録
                     services.Configure<BatchProcessingOptions>(
                         context.Configuration.GetSection(BatchProcessingOptions.SectionName));
 
+                    // データアクセス層の依存関係注入
                     // リポジトリの登録
                     services.AddScoped<ITransactionRepository, TransactionRepository>();
                     services.AddScoped<ILatestDataRepository, LatestDataRepository>();
@@ -49,45 +60,11 @@ namespace CheckDiffTable
 
                 logger.LogInformation("=== トランザクション差分チェック・更新システム開始 ===");
 
-                if (args.Length > 0)
-                {
-                    if (args[0].ToLower() == "batch")
-                    {
-                        // 一括処理モード（高効率）
-                        int? batchSize = null;
-                        if (args.Length > 1 && int.TryParse(args[1], out int parsedBatchSize))
-                        {
-                            batchSize = parsedBatchSize;
-                            logger.LogInformation("一括処理モード（高効率版）- バッチサイズ: {BatchSize}", batchSize);
-                        }
-                        else
-                        {
-                            logger.LogInformation("一括処理モード（高効率版）- デフォルトバッチサイズ");
-                        }
-                        
-                        var batchResult = await diffCheckService.ProcessAllEntitiesBatchAsync(batchSize);
-                        DisplayBatchResult(batchResult, logger);
-                    }
-                    else if (int.TryParse(args[0], out int entityId))
-                    {
-                        // 特定のエンティティIDを処理
-                        logger.LogInformation("単一エンティティ処理モード: EntityID = {EntityId}", entityId);
-                        var result = await diffCheckService.ProcessEntityAsync(entityId);
-                        DisplayResult(result, logger);
-                    }
-                    else
-                    {
-                        logger.LogError("無効な引数です。使用方法: dotnet run [batch [batchsize]|EntityID]");
-                        Environment.Exit(1);
-                    }
-                }
-                else
-                {
-                    // デフォルト：一括処理モード
-                    logger.LogInformation("一括処理モード（デフォルト）");
-                    var batchResult = await diffCheckService.ProcessAllEntitiesBatchAsync();
-                    DisplayBatchResult(batchResult, logger);
-                }
+                // appsettings.jsonで設定されたデフォルトバッチサイズを使用
+                logger.LogInformation("一括処理モード - デフォルトバッチサイズ");
+                
+                var batchResult = await diffCheckService.ProcessAllEntitiesBatchAsync();
+                DisplayBatchResult(batchResult, logger);
 
                 logger.LogInformation("=== トランザクション差分チェック・更新システム終了 ===");
             }
@@ -99,6 +76,12 @@ namespace CheckDiffTable
             }
         }
 
+        /// <summary>
+        /// バッチ処理結果をコンソールに出力する
+        /// 処理結果のサマリー情報と詳細情報を適切なログレベルで表示
+        /// </summary>
+        /// <param name="result">バッチ処理結果</param>
+        /// <param name="logger">ログ出力用インスタンス</param>
         private static void DisplayBatchResult(BatchProcessResult result, ILogger logger)
         {
             var logLevel = result.Success ? LogLevel.Information : LogLevel.Error;
@@ -109,26 +92,23 @@ namespace CheckDiffTable
             logger.Log(logLevel, "新規登録: {Insert}件", result.InsertCount);
             logger.Log(logLevel, "更新: {Update}件", result.UpdateCount);
             logger.Log(logLevel, "スキップ: {Skip}件", result.SkipCount);
+            logger.Log(logLevel, "削除: {Delete}件", result.DeletedCount);
             logger.Log(logLevel, "エラー: {Error}件", result.ErrorCount);
             logger.Log(logLevel, "処理時間: {ProcessingTime}ms", result.ProcessingTime.TotalMilliseconds);
             logger.Log(logLevel, "メッセージ: {Message}", result.Message);
 
+            // 詳細結果がある場合のみ表示
             if (result.Details.Any())
             {
                 logger.LogInformation("=== 詳細結果 ===");
                 foreach (var detail in result.Details)
                 {
-                    DisplayResult(detail, logger);
+                    var detailLogLevel = detail.Success ? LogLevel.Information : LogLevel.Error;
+                    logger.Log(detailLogLevel, 
+                        "EntityID: {EntityId}, Action: {Action}, Success: {Success}, Message: {Message}, TransactionID: {TransactionId}",
+                        detail.EntityId, detail.Action, detail.Success, detail.Message, detail.TransactionId);
                 }
             }
-        }
-
-        private static void DisplayResult(ProcessResult result, ILogger logger)
-        {
-            var logLevel = result.Success ? LogLevel.Information : LogLevel.Error;
-            logger.Log(logLevel, 
-                "EntityID: {EntityId}, Action: {Action}, Success: {Success}, Message: {Message}, TransactionID: {TransactionId}",
-                result.EntityId, result.Action, result.Success, result.Message, result.TransactionId);
         }
     }
 }

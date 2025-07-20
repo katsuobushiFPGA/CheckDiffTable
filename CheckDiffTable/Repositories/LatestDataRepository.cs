@@ -9,17 +9,29 @@ using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
+using static CheckDiffTable.Models.DatabaseConstants;
 
 namespace CheckDiffTable.Repositories
 {
     /// <summary>
-    /// 最新データテーブルリポジトリの実装
+    /// 最新データテーブルリポジトリの実装クラス
+    /// PostgreSQLデータベースでの最新データの管理（取得、登録、更新、一括操作）を提供
     /// </summary>
     public class LatestDataRepository : ILatestDataRepository
     {
+        /// <summary>データベース接続文字列</summary>
         private readonly string _connectionString;
+        
+        /// <summary>ログ出力用インスタンス</summary>
         private readonly ILogger<LatestDataRepository> _logger;
 
+        /// <summary>
+        /// LatestDataRepositoryのコンストラクタ
+        /// 依存関係の注入により設定とログを受け取る
+        /// </summary>
+        /// <param name="configuration">アプリケーション設定</param>
+        /// <param name="logger">ログ出力用インスタンス</param>
+        /// <exception cref="ArgumentNullException">接続文字列が設定されていない場合</exception>
         public LatestDataRepository(IConfiguration configuration, ILogger<LatestDataRepository> logger)
         {
             _connectionString = configuration.GetConnectionString("DefaultConnection") 
@@ -27,57 +39,28 @@ namespace CheckDiffTable.Repositories
             _logger = logger;
         }
 
-        public async Task<LatestDataEntity?> GetByEntityIdAsync(int entityId)
+        /// <summary>
+        /// 複合主キー（id, entity_id）のリストに対応する最新データを一括取得する
+        /// N+1問題を回避するため、PostgreSQLのROW構文を使用して一度のクエリで取得
+        /// </summary>
+        /// <param name="transactionKeys">取得対象の複合主キー（id, entity_id）のリスト</param>
+        /// <returns>該当する最新データのリスト</returns>
+        public async Task<List<LatestDataEntity>> GetByTransactionKeysAsync(List<(int Id, int EntityId)> transactionKeys)
         {
-            const string sql = @"
-                SELECT entity_id, name, description, status, amount, transaction_type, 
-                       created_at, updated_at
-                FROM latest_data_table 
-                WHERE entity_id = @entityId";
+            if (!transactionKeys.Any()) return new List<LatestDataEntity>();
 
-            try
-            {
-                using var connection = new NpgsqlConnection(_connectionString);
-                await connection.OpenAsync();
-                
-                using var command = new NpgsqlCommand(sql, connection);
-                command.Parameters.AddWithValue("@entityId", entityId);
-                
-                using var reader = await command.ExecuteReaderAsync();
-                
-                if (await reader.ReadAsync())
-                {
-                    return new LatestDataEntity
-                    {
-                        EntityId = reader.GetInt32("entity_id"),
-                        Name = reader.GetString("name"),
-                        Description = reader.IsDBNull("description") ? null : reader.GetString("description"),
-                        Status = reader.GetString("status"),
-                        Amount = reader.GetDecimal("amount"),
-                        TransactionType = reader.GetString("transaction_type"),
-                        CreatedAt = reader.GetDateTime("created_at"),
-                        UpdatedAt = reader.GetDateTime("updated_at")
-                    };
-                }
-                
-                return null;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error getting latest data for entity {EntityId}", entityId);
-                throw;
-            }
-        }
-
-        public async Task<List<LatestDataEntity>> GetByEntityIdsAsync(List<int> entityIds)
-        {
-            if (!entityIds.Any()) return new List<LatestDataEntity>();
-
-            const string sql = @"
-                SELECT entity_id, name, description, status, amount, transaction_type,
-                       created_at, updated_at
-                FROM latest_data_table 
-                WHERE entity_id = ANY(@entityIds)";
+            var sql = $@"
+                SELECT {DatabaseConstants.LatestDataTable.Id}, 
+                       {DatabaseConstants.LatestDataTable.EntityId}, 
+                       {DatabaseConstants.LatestDataTable.Name}, 
+                       {DatabaseConstants.LatestDataTable.Description}, 
+                       {DatabaseConstants.LatestDataTable.Status}, 
+                       {DatabaseConstants.LatestDataTable.Amount}, 
+                       {DatabaseConstants.LatestDataTable.TransactionType},
+                       {DatabaseConstants.LatestDataTable.CreatedAt}, 
+                       {DatabaseConstants.LatestDataTable.UpdatedAt}
+                FROM {DatabaseConstants.LatestDataTable.TableName} 
+                WHERE ({DatabaseConstants.LatestDataTable.Id}, {DatabaseConstants.LatestDataTable.EntityId}) = ANY(@transactionKeys)";
 
             var entities = new List<LatestDataEntity>();
 
@@ -87,7 +70,12 @@ namespace CheckDiffTable.Repositories
                 await connection.OpenAsync();
                 
                 using var command = new NpgsqlCommand(sql, connection);
-                command.Parameters.AddWithValue("@entityIds", entityIds.ToArray());
+                // PostgreSQLのROW構文を使用して複合主キーのバッチ検索を実行
+                var transactionKeyArray = transactionKeys
+                    .Select(tk => new object[] { tk.Id, tk.EntityId })
+                    .ToArray();
+                
+                command.Parameters.AddWithValue("@transactionKeys", transactionKeyArray);
                 
                 using var reader = await command.ExecuteReaderAsync();
                 
@@ -95,14 +83,16 @@ namespace CheckDiffTable.Repositories
                 {
                     entities.Add(new LatestDataEntity
                     {
-                        EntityId = reader.GetInt32("entity_id"),
-                        Name = reader.GetString("name"),
-                        Description = reader.IsDBNull("description") ? null : reader.GetString("description"),
-                        Status = reader.GetString("status"),
-                        Amount = reader.GetDecimal("amount"),
-                        TransactionType = reader.GetString("transaction_type"),
-                        CreatedAt = reader.GetDateTime("created_at"),
-                        UpdatedAt = reader.GetDateTime("updated_at")
+                        Id = reader.GetInt32(DatabaseConstants.LatestDataTable.Id),
+                        EntityId = reader.GetInt32(DatabaseConstants.LatestDataTable.EntityId),
+                        Name = reader.GetString(DatabaseConstants.LatestDataTable.Name),
+                        Description = reader.IsDBNull(DatabaseConstants.LatestDataTable.Description) 
+                            ? null : reader.GetString(DatabaseConstants.LatestDataTable.Description),
+                        Status = reader.GetString(DatabaseConstants.LatestDataTable.Status),
+                        Amount = reader.GetDecimal(DatabaseConstants.LatestDataTable.Amount),
+                        TransactionType = reader.GetString(DatabaseConstants.LatestDataTable.TransactionType),
+                        CreatedAt = reader.GetDateTime(DatabaseConstants.LatestDataTable.CreatedAt),
+                        UpdatedAt = reader.GetDateTime(DatabaseConstants.LatestDataTable.UpdatedAt)
                     });
                 }
                 
@@ -110,18 +100,26 @@ namespace CheckDiffTable.Repositories
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting latest data for entity IDs");
+                _logger.LogError(ex, "Error getting latest data for transaction keys");
                 throw;
             }
         }
 
+        /// <summary>
+        /// 新しい最新データを1件登録する
+        /// </summary>
+        /// <param name="entity">登録対象の最新データエンティティ</param>
+        /// <returns>非同期処理タスク</returns>
         public async Task InsertAsync(LatestDataEntity entity)
         {
-            const string sql = @"
-                INSERT INTO latest_data_table 
-                (entity_id, name, description, status, amount, transaction_type, 
-                 created_at, updated_at)
-                VALUES (@entityId, @name, @description, @status, @amount, @transactionType, 
+            var sql = $@"
+                INSERT INTO {DatabaseConstants.LatestDataTable.TableName} 
+                ({DatabaseConstants.LatestDataTable.Id}, {DatabaseConstants.LatestDataTable.EntityId}, 
+                 {DatabaseConstants.LatestDataTable.Name}, {DatabaseConstants.LatestDataTable.Description}, 
+                 {DatabaseConstants.LatestDataTable.Status}, {DatabaseConstants.LatestDataTable.Amount}, 
+                 {DatabaseConstants.LatestDataTable.TransactionType}, {DatabaseConstants.LatestDataTable.CreatedAt}, 
+                 {DatabaseConstants.LatestDataTable.UpdatedAt})
+                VALUES (@id, @entityId, @name, @description, @status, @amount, @transactionType, 
                         @createdAt, @updatedAt)";
 
             try
@@ -142,17 +140,24 @@ namespace CheckDiffTable.Repositories
             }
         }
 
+        /// <summary>
+        /// 既存の最新データを1件更新する
+        /// 複合主キー（id, entity_id）をキーとして該当レコードを更新
+        /// </summary>
+        /// <param name="entity">更新対象の最新データエンティティ</param>
+        /// <returns>非同期処理タスク</returns>
         public async Task UpdateAsync(LatestDataEntity entity)
         {
-            const string sql = @"
-                UPDATE latest_data_table 
-                SET name = @name, 
-                    description = @description, 
-                    status = @status,
-                    amount = @amount,
-                    transaction_type = @transactionType,
-                    updated_at = @updatedAt
-                WHERE entity_id = @entityId";
+            var sql = $@"
+                UPDATE {DatabaseConstants.LatestDataTable.TableName} 
+                SET {DatabaseConstants.LatestDataTable.Name} = @name, 
+                    {DatabaseConstants.LatestDataTable.Description} = @description, 
+                    {DatabaseConstants.LatestDataTable.Status} = @status,
+                    {DatabaseConstants.LatestDataTable.Amount} = @amount,
+                    {DatabaseConstants.LatestDataTable.TransactionType} = @transactionType,
+                    {DatabaseConstants.LatestDataTable.UpdatedAt} = @updatedAt
+                WHERE {DatabaseConstants.LatestDataTable.Id} = @id 
+                  AND {DatabaseConstants.LatestDataTable.EntityId} = @entityId";
 
             try
             {
@@ -179,15 +184,25 @@ namespace CheckDiffTable.Repositories
             }
         }
 
+        /// <summary>
+        /// 最新データを一括でUPSERT（新規登録・更新）する
+        /// PostgreSQLのON CONFLICT機能を使用して高効率な一括処理を実現
+        /// 存在しないものは新規登録、存在するものは更新を行う
+        /// </summary>
+        /// <param name="entities">処理対象の最新データエンティティリスト</param>
+        /// <returns>非同期処理タスク</returns>
         public async Task BulkUpsertAsync(List<LatestDataEntity> entities)
         {
             if (!entities.Any()) return;
 
-            // PostgreSQLのUPSERT構文を使用した一括処理
-            var sql = new StringBuilder(@"
-                INSERT INTO latest_data_table 
-                (entity_id, name, description, status, amount, transaction_type, 
-                 created_at, updated_at) 
+            // PostgreSQLのUPSERT構文を使用した一括処理（複合主キー対応）
+            var sql = new StringBuilder($@"
+                INSERT INTO {DatabaseConstants.LatestDataTable.TableName} 
+                ({DatabaseConstants.LatestDataTable.Id}, {DatabaseConstants.LatestDataTable.EntityId}, 
+                 {DatabaseConstants.LatestDataTable.Name}, {DatabaseConstants.LatestDataTable.Description}, 
+                 {DatabaseConstants.LatestDataTable.Status}, {DatabaseConstants.LatestDataTable.Amount}, 
+                 {DatabaseConstants.LatestDataTable.TransactionType}, {DatabaseConstants.LatestDataTable.CreatedAt}, 
+                 {DatabaseConstants.LatestDataTable.UpdatedAt}) 
                 VALUES ");
 
             var parameters = new List<NpgsqlParameter>();
@@ -197,8 +212,9 @@ namespace CheckDiffTable.Repositories
             {
                 var entity = entities[i];
                 
-                valuesClauses.Add($"(@entityId{i}, @name{i}, @description{i}, @status{i}, @amount{i}, @transactionType{i}, @createdAt{i}, @updatedAt{i})");
+                valuesClauses.Add($"(@id{i}, @entityId{i}, @name{i}, @description{i}, @status{i}, @amount{i}, @transactionType{i}, @createdAt{i}, @updatedAt{i})");
                 
+                parameters.Add(new NpgsqlParameter($"@id{i}", entity.Id));
                 parameters.Add(new NpgsqlParameter($"@entityId{i}", entity.EntityId));
                 parameters.Add(new NpgsqlParameter($"@name{i}", entity.Name));
                 parameters.Add(new NpgsqlParameter($"@description{i}", (object?)entity.Description ?? DBNull.Value));
@@ -210,15 +226,15 @@ namespace CheckDiffTable.Repositories
             }
 
             sql.Append(string.Join(", ", valuesClauses));
-            sql.Append(@"
-                ON CONFLICT (entity_id) 
+            sql.Append($@"
+                ON CONFLICT ({DatabaseConstants.LatestDataTable.Id}, {DatabaseConstants.LatestDataTable.EntityId}) 
                 DO UPDATE SET 
-                    name = EXCLUDED.name,
-                    description = EXCLUDED.description,
-                    status = EXCLUDED.status,
-                    amount = EXCLUDED.amount,
-                    transaction_type = EXCLUDED.transaction_type,
-                    updated_at = EXCLUDED.updated_at");
+                    {DatabaseConstants.LatestDataTable.Name} = EXCLUDED.{DatabaseConstants.LatestDataTable.Name},
+                    {DatabaseConstants.LatestDataTable.Description} = EXCLUDED.{DatabaseConstants.LatestDataTable.Description},
+                    {DatabaseConstants.LatestDataTable.Status} = EXCLUDED.{DatabaseConstants.LatestDataTable.Status},
+                    {DatabaseConstants.LatestDataTable.Amount} = EXCLUDED.{DatabaseConstants.LatestDataTable.Amount},
+                    {DatabaseConstants.LatestDataTable.TransactionType} = EXCLUDED.{DatabaseConstants.LatestDataTable.TransactionType},
+                    {DatabaseConstants.LatestDataTable.UpdatedAt} = EXCLUDED.{DatabaseConstants.LatestDataTable.UpdatedAt}");
 
             try
             {
@@ -238,13 +254,25 @@ namespace CheckDiffTable.Repositories
             }
         }
 
+        /// <summary>
+        /// 全ての最新データを取得する
+        /// エンティティIDの昇順でソート
+        /// </summary>
+        /// <returns>全最新データのリスト</returns>
         public async Task<List<LatestDataEntity>> GetAllAsync()
         {
-            const string sql = @"
-                SELECT entity_id, name, description, status, amount, transaction_type,
-                       created_at, updated_at
-                FROM latest_data_table 
-                ORDER BY entity_id";
+            var sql = $@"
+                SELECT {DatabaseConstants.LatestDataTable.Id}, 
+                       {DatabaseConstants.LatestDataTable.EntityId}, 
+                       {DatabaseConstants.LatestDataTable.Name}, 
+                       {DatabaseConstants.LatestDataTable.Description}, 
+                       {DatabaseConstants.LatestDataTable.Status}, 
+                       {DatabaseConstants.LatestDataTable.Amount}, 
+                       {DatabaseConstants.LatestDataTable.TransactionType},
+                       {DatabaseConstants.LatestDataTable.CreatedAt}, 
+                       {DatabaseConstants.LatestDataTable.UpdatedAt}
+                FROM {DatabaseConstants.LatestDataTable.TableName} 
+                ORDER BY {DatabaseConstants.LatestDataTable.EntityId}";
 
             var entities = new List<LatestDataEntity>();
 
@@ -260,14 +288,16 @@ namespace CheckDiffTable.Repositories
                 {
                     entities.Add(new LatestDataEntity
                     {
-                        EntityId = reader.GetInt32("entity_id"),
-                        Name = reader.GetString("name"),
-                        Description = reader.IsDBNull("description") ? null : reader.GetString("description"),
-                        Status = reader.GetString("status"),
-                        Amount = reader.GetDecimal("amount"),
-                        TransactionType = reader.GetString("transaction_type"),
-                        CreatedAt = reader.GetDateTime("created_at"),
-                        UpdatedAt = reader.GetDateTime("updated_at")
+                        Id = reader.GetInt32(DatabaseConstants.LatestDataTable.Id),
+                        EntityId = reader.GetInt32(DatabaseConstants.LatestDataTable.EntityId),
+                        Name = reader.GetString(DatabaseConstants.LatestDataTable.Name),
+                        Description = reader.IsDBNull(DatabaseConstants.LatestDataTable.Description) 
+                            ? null : reader.GetString(DatabaseConstants.LatestDataTable.Description),
+                        Status = reader.GetString(DatabaseConstants.LatestDataTable.Status),
+                        Amount = reader.GetDecimal(DatabaseConstants.LatestDataTable.Amount),
+                        TransactionType = reader.GetString(DatabaseConstants.LatestDataTable.TransactionType),
+                        CreatedAt = reader.GetDateTime(DatabaseConstants.LatestDataTable.CreatedAt),
+                        UpdatedAt = reader.GetDateTime(DatabaseConstants.LatestDataTable.UpdatedAt)
                     });
                 }
                 
@@ -282,6 +312,7 @@ namespace CheckDiffTable.Repositories
 
         private static void AddParameters(NpgsqlCommand command, LatestDataEntity entity)
         {
+            command.Parameters.AddWithValue("@id", entity.Id);
             command.Parameters.AddWithValue("@entityId", entity.EntityId);
             command.Parameters.AddWithValue("@name", entity.Name);
             command.Parameters.AddWithValue("@description", (object?)entity.Description ?? DBNull.Value);

@@ -16,20 +16,24 @@ CREATE TABLE IF NOT EXISTS transaction_table (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- 最新データテーブル（各エンティティの最新状態を保持）
+-- 最新データテーブル（各トランザクションに対応する最新状態を保持）
+-- 複合主キー（id, entity_id）を使用してトランザクションとの関係性を明確化
 CREATE TABLE IF NOT EXISTS latest_data_table (
-    entity_id INTEGER PRIMARY KEY,
+    id INTEGER NOT NULL,
+    entity_id INTEGER NOT NULL,
     name VARCHAR(100) NOT NULL,
     description TEXT,
     status VARCHAR(20) NOT NULL,
     amount DECIMAL(10,2),
     transaction_type VARCHAR(20) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (id, entity_id)
 );
 
 -- インデックス作成（効率化のため）
 CREATE INDEX IF NOT EXISTS idx_transaction_entity_id_created_at ON transaction_table(entity_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_latest_data_composite_key ON latest_data_table(id, entity_id);
 CREATE INDEX IF NOT EXISTS idx_latest_data_entity_id ON latest_data_table(entity_id);
 
 -- サンプルデータの挿入（大量トランザクションのシミュレーション）
