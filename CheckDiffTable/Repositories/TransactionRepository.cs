@@ -18,23 +18,21 @@ namespace CheckDiffTable.Repositories
     /// </summary>
     public class TransactionRepository : ITransactionRepository
     {
-        /// <summary>データベース接続文字列</summary>
-        private readonly string _connectionString;
+        /// <summary>データベースデータソース（接続プール管理）</summary>
+        private readonly NpgsqlDataSource _dataSource;
         
         /// <summary>ログ出力用インスタンス</summary>
         private readonly ILogger<TransactionRepository> _logger;
 
         /// <summary>
         /// TransactionRepositoryのコンストラクタ
-        /// 依存関係の注入により設定とログを受け取る
+        /// 依存関係の注入によりデータソースとログを受け取る
         /// </summary>
-        /// <param name="configuration">アプリケーション設定</param>
+        /// <param name="dataSource">PostgreSQLデータソース</param>
         /// <param name="logger">ログ出力用インスタンス</param>
-        /// <exception cref="ArgumentNullException">接続文字列が設定されていない場合</exception>
-        public TransactionRepository(IConfiguration configuration, ILogger<TransactionRepository> logger)
+        public TransactionRepository(NpgsqlDataSource dataSource, ILogger<TransactionRepository> logger)
         {
-            _connectionString = configuration.GetConnectionString("DefaultConnection") 
-                ?? throw new ArgumentNullException("Connection string is required");
+            _dataSource = dataSource;
             _logger = logger;
         }
 
@@ -56,8 +54,7 @@ namespace CheckDiffTable.Repositories
 
             try
             {
-                using var connection = new NpgsqlConnection(_connectionString);
-                await connection.OpenAsync();
+                using var connection = await _dataSource.OpenConnectionAsync();
                 
                 using var command = new NpgsqlCommand(sql, connection);
                 using var reader = await command.ExecuteReaderAsync();
@@ -112,8 +109,7 @@ namespace CheckDiffTable.Repositories
 
             try
             {
-                using var connection = new NpgsqlConnection(_connectionString);
-                await connection.OpenAsync();
+                using var connection = await _dataSource.OpenConnectionAsync();
                 
                 using var command = new NpgsqlCommand(sql, connection);
                 

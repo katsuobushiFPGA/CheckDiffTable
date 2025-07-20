@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using System;
 using System.Linq;
+using Npgsql;
 
 namespace CheckDiffTable
 {
@@ -35,6 +36,13 @@ namespace CheckDiffTable
                 })
                 .ConfigureServices((context, services) =>
                 {
+                    // データベース接続の設定（appsettings.jsonから読み込み）
+                    var connectionString = context.Configuration.GetConnectionString("DefaultConnection")
+                        ?? throw new InvalidOperationException("DefaultConnection is required");
+                    var dataSourceBuilder = new NpgsqlDataSourceBuilder(connectionString);
+                    var dataSource = dataSourceBuilder.Build();
+                    services.AddSingleton(dataSource);
+
                     // 設定オプションの登録
                     services.Configure<BatchProcessingOptions>(
                         context.Configuration.GetSection(BatchProcessingOptions.SectionName));
@@ -70,11 +78,42 @@ namespace CheckDiffTable
 
                 logger.LogInformation("=== トランザクション差分チェック・更新システム終了 ===");
             }
+            catch (NpgsqlException npgsqlEx)
+            {
+                var logger = host.Services.GetService<ILogger<Program>>();
+                logger?.LogError(npgsqlEx, "データベース接続エラーが発生しました: {Message}", npgsqlEx.Message);
+                
+                if (npgsqlEx.IsTransient || npgsqlEx.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase))
+                {
+                    logger?.LogError("データベース接続タイムアウトのため、アプリケーションを終了します");
+                    Environment.Exit(1);
+                }
+                else
+                {
+                    logger?.LogError("データベースエラーのため、アプリケーションを終了します");
+                    Environment.Exit(1);
+                }
+            }
+            catch (TimeoutException timeoutEx)
+            {
+                var logger = host.Services.GetService<ILogger<Program>>();
+                logger?.LogError(timeoutEx, "処理タイムアウトが発生しました");
+                Environment.Exit(1); 
+            }
             catch (Exception ex)
             {
                 var logger = host.Services.GetService<ILogger<Program>>();
                 logger?.LogError(ex, "アプリケーション実行中にエラーが発生しました");
                 Environment.Exit(1);
+            }
+            finally
+            {
+                // データベースリソースの解放
+                var dataSource = host.Services.GetService<NpgsqlDataSource>();
+                if (dataSource != null)
+                {
+                    await dataSource.DisposeAsync();
+                }
             }
         }
 
