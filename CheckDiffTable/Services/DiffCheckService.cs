@@ -179,10 +179,9 @@ namespace CheckDiffTable.Services
                         // 既存データありの場合：差分チェック
                         if (existingData.HasDifference(newLatestData))
                         {
-                            // 差分あり：更新対象リストに追加
-                            newLatestData.CreatedAt = existingData.CreatedAt; // 作成日時は保持
-                            newLatestData.UpdatedAt = DateTime.UtcNow;
-                            toUpdate.Add(newLatestData);
+                            // 差分あり：更新対象リストに追加（既存の作成日時を保持）
+                            var updateData = LatestDataEntity.FromTransactionForUpdate(transaction, existingData.CreatedAt);
+                            toUpdate.Add(updateData);
 
                             processResult.Action = ProcessAction.Update;
                             processResult.Message = "データ更新";

@@ -50,17 +50,17 @@ namespace CheckDiffTable.Repositories
             if (!transactionKeys.Any()) return new List<LatestDataEntity>();
 
             var sql = $@"
-                SELECT {DatabaseConstants.LatestDataTable.Id}, 
-                       {DatabaseConstants.LatestDataTable.EntityId}, 
-                       {DatabaseConstants.LatestDataTable.Name}, 
-                       {DatabaseConstants.LatestDataTable.Description}, 
-                       {DatabaseConstants.LatestDataTable.Status}, 
-                       {DatabaseConstants.LatestDataTable.Amount}, 
-                       {DatabaseConstants.LatestDataTable.TransactionType},
-                       {DatabaseConstants.LatestDataTable.CreatedAt}, 
-                       {DatabaseConstants.LatestDataTable.UpdatedAt}
-                FROM {DatabaseConstants.LatestDataTable.TableName} 
-                WHERE ({DatabaseConstants.LatestDataTable.Id}, {DatabaseConstants.LatestDataTable.EntityId}) = ANY(@transactionKeys)";
+                SELECT {LatestDataTable.Id}, 
+                       {LatestDataTable.EntityId}, 
+                       {LatestDataTable.Name}, 
+                       {LatestDataTable.Description}, 
+                       {LatestDataTable.Status}, 
+                       {LatestDataTable.Amount}, 
+                       {LatestDataTable.TransactionType},
+                       {LatestDataTable.CreatedAt}, 
+                       {LatestDataTable.UpdatedAt}
+                FROM {LatestDataTable.TableName} 
+                WHERE ({LatestDataTable.Id}, {LatestDataTable.EntityId}) = ANY(@transactionKeys)";
 
             var entities = new List<LatestDataEntity>();
 

@@ -51,12 +51,36 @@ namespace CheckDiffTable.Models
         }
 
         /// <summary>
-        /// TransactionEntityからLatestDataEntityに変換する
+        /// TransactionEntityからLatestDataEntityに変換する（新規作成用）
         /// トランザクションデータを最新データ形式に変換し、差分チェック・更新処理で使用
         /// </summary>
         /// <param name="transaction">変換元のトランザクションエンティティ</param>
         /// <returns>変換後の最新データエンティティ</returns>
         public static LatestDataEntity FromTransaction(TransactionEntity transaction)
+        {
+            var now = DateTime.UtcNow;
+            return new LatestDataEntity
+            {
+                Id = transaction.Id,
+                EntityId = transaction.EntityId,
+                Name = transaction.Name,
+                Description = transaction.Description,
+                Status = transaction.Status,
+                Amount = transaction.Amount,
+                TransactionType = transaction.TransactionType,
+                CreatedAt = now,  // 新規作成時は現在時刻
+                UpdatedAt = now   // 更新時刻も現在時刻
+            };
+        }
+
+        /// <summary>
+        /// TransactionEntityからLatestDataEntityに変換する（更新用）
+        /// 既存の作成日時を保持して更新用のエンティティを作成
+        /// </summary>
+        /// <param name="transaction">変換元のトランザクションエンティティ</param>
+        /// <param name="existingCreatedAt">既存データの作成日時</param>
+        /// <returns>変換後の最新データエンティティ</returns>
+        public static LatestDataEntity FromTransactionForUpdate(TransactionEntity transaction, DateTime existingCreatedAt)
         {
             return new LatestDataEntity
             {
@@ -67,8 +91,8 @@ namespace CheckDiffTable.Models
                 Status = transaction.Status,
                 Amount = transaction.Amount,
                 TransactionType = transaction.TransactionType,
-                CreatedAt = transaction.CreatedAt,
-                UpdatedAt = transaction.UpdatedAt
+                CreatedAt = existingCreatedAt,  // 既存の作成日時を保持
+                UpdatedAt = DateTime.UtcNow     // 更新時刻は現在時刻
             };
         }
     }
