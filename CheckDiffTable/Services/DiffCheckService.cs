@@ -17,9 +17,8 @@ namespace CheckDiffTable.Services
         /// <summary>
         /// 全エンティティをバッチ処理で効率的に差分チェック・更新を行う
         /// </summary>
-        /// <param name="batchSize">バッチサイズ。未指定の場合は設定値またはデフォルト値を使用</param>
         /// <returns>処理結果（成功/失敗、件数、詳細情報を含む）</returns>
-        Task<BatchProcessResult> ProcessAllEntitiesBatchAsync(int? batchSize = null);
+        Task<BatchProcessResult> ProcessAllEntitiesBatchAsync();
     }
 
     /// <summary>
@@ -139,23 +138,21 @@ namespace CheckDiffTable.Services
         /// 全エンティティをバッチ処理で効率的に差分チェック・更新を行う
         /// トランザクションテーブルから最新データを取得し、最新データテーブルと比較して差分があるものを一括更新する
         /// </summary>
-        /// <param name="batchSize">バッチサイズ。未指定の場合は設定値またはデフォルト値を使用</param>
         /// <returns>処理結果（成功/失敗、件数、詳細情報を含む）</returns>
-        public async Task<BatchProcessResult> ProcessAllEntitiesBatchAsync(int? batchSize = null)
+        public async Task<BatchProcessResult> ProcessAllEntitiesBatchAsync()
         {
             var startTime = DateTime.UtcNow;
             var result = new BatchProcessResult { Success = true };
 
             try
             {
-                // バッチサイズの決定（パラメータ優先、設定値、デフォルト値の順）
-                var effectiveBatchSize = batchSize ?? _batchOptions.GetValidatedBatchSize();
+                // バッチサイズの決定（appsettings.jsonの設定値またはデフォルト値を使用）
+                var effectiveBatchSize = _batchOptions.GetValidatedBatchSize();
                 _logger.LogInformation("Starting batch processing with batch size: {BatchSize}", effectiveBatchSize);
 
-                // 1. トランザクションテーブルから全てのトランザクションを一括取得（効率化）
-                // N+1問題を回避するため、個別のクエリではなく一括取得を行う
-                var latestTransactions = await _transactionRepository.GetAllTransactionsAsync();
-                if (!latestTransactions.Any())
+                // トランザクションテーブルから全てのトランザクションを一括取得
+                var transactions = await _transactionRepository.GetAllTransactionsAsync();
+                if (!transactions.Any())
                 {
                     _logger.LogInformation("No transactions found");
                     result.Message = "処理対象のトランザクションがありません";
@@ -163,42 +160,30 @@ namespace CheckDiffTable.Services
                     return result;
                 }
 
-                result.TotalEntities = latestTransactions.Count;
+                result.TotalEntities = transactions.Count;
                 _logger.LogInformation("Found {Count} entities with transactions", result.TotalEntities);
 
                 // データサイズに応じて処理方法を選択
-                // N+1問題回避：バッチ単位でデータベースアクセスを制御
+                // バッチ単位でデータベースアクセスを制御
                 // 小さなデータセットの場合は一括処理、大きなデータセットはバッチ分割処理
-                if (latestTransactions.Count <= effectiveBatchSize)
+                if (transactions.Count <= effectiveBatchSize)
                 {
-                    // 全件一括処理（最も効率的）
-                    // メモリ使用量が許容範囲内の場合、最も高速な処理を実行
-                    await ProcessTransactionBatch(latestTransactions, result);
+                    await ProcessTransactionBatch(transactions, result);
                 }
                 else
                 {
-                    // バッチ分割処理（メモリ効率重視）
-                    // 大量データの場合、メモリ使用量を抑えるためバッチ単位で処理
-                    await ProcessTransactionsBatched(latestTransactions, effectiveBatchSize, result);
+                    await ProcessTransactionsBatched(transactions, effectiveBatchSize, result);
                 }
 
-                // 6. 未処理トランザクションの削除
-                // 処理されたトランザクションキーを収集
-                var processedTransactionKeys = latestTransactions
-                    .Where(t => result.Details.Any(d => d.TransactionId == t.Id && d.EntityId == t.EntityId))
-                    .Select(t => (t.Id, t.EntityId))
-                    .ToList();
-
-                var deletedCount = await _transactionRepository.DeleteUnprocessedTransactionsAsync(processedTransactionKeys);
-                result.DeletedCount = deletedCount;
-                _logger.LogInformation("Cleaned up {DeletedCount} unprocessed transactions from transaction table", deletedCount);
+                // 差分がなかったトランザクションの削除は各バッチで実行済み
+                _logger.LogInformation("All batches completed including cleanup of transactions with no differences");
 
                 // 処理完了：結果サマリーの生成とログ出力
                 result.ProcessingTime = DateTime.UtcNow - startTime;
                 result.Message = $"一括処理完了: {result.TotalEntities}エンティティ処理 " +
                                $"(新規:{result.InsertCount}, 更新:{result.UpdateCount}, " +
                                $"スキップ:{result.SkipCount}, エラー:{result.ErrorCount}) " +
-                               $"削除:{deletedCount}件 " +
+                               $"削除:{result.DeletedCount}件 " +
                                $"処理時間:{result.ProcessingTime.TotalMilliseconds:F0}ms";
 
                 _logger.LogInformation(result.Message);
@@ -238,25 +223,26 @@ namespace CheckDiffTable.Services
         /// <summary>
         /// 1つのバッチ内のトランザクションを処理する
         /// 既存データとの差分チェックを行い、新規登録・更新・スキップの判定を行う
-        /// データベースアクセスを最小限に抑えるため、バッチ内の全てのデータを一括取得・一括更新する
+        /// データベースアクセスを最小限に抑えるため、バッチ内の全てのデータを一括取得・一括更新・一括削除する
         /// </summary>
         /// <param name="batchTransactions">処理対象のトランザクションバッチ</param>
         /// <param name="result">処理結果を蓄積するオブジェクト</param>
         /// <returns>非同期処理タスク</returns>
         private async Task ProcessTransactionBatch(List<TransactionEntity> batchTransactions, BatchProcessResult result)
         {
-            // 2. 関連する最新データを一括取得（効率化）
+            // 関連する最新データを一括取得（効率化）
             // バッチ内の全（id, entity_id）複合主キーに対する既存データを一括取得し、N+1問題を回避
             var transactionKeys = batchTransactions.Select(t => (t.Id, t.EntityId)).ToList();
             var existingLatestData = await _latestDataRepository.GetByTransactionKeysAsync(transactionKeys);
             // 高速検索のため複合主キーでDictionary形式に変換
             var existingLatestDataDict = existingLatestData.ToDictionary(e => (e.Id, e.EntityId));
 
-            // 3. 差分チェックと処理データ準備
+            // 差分チェックと処理データ準備
             // 各トランザクションに対して既存データとの差分をチェックし、
-            // 新規登録・更新・スキップの分類を行う
+            // 新規登録・更新・スキップ・削除の分類を行う
             var toInsert = new List<LatestDataEntity>();
             var toUpdate = new List<LatestDataEntity>();
+            var toDelete = new List<(int Id, int EntityId)>();
 
             foreach (var transaction in batchTransactions)
             {
@@ -289,7 +275,9 @@ namespace CheckDiffTable.Services
                         }
                         else
                         {
-                            // 差分なし：処理をスキップ
+                            // 差分なし：処理をスキップし、削除対象に追加
+                            toDelete.Add((transaction.Id, transaction.EntityId));
+                            
                             processResult.Action = ProcessAction.None;
                             processResult.Message = "差分なし - スキップ";
                             result.SkipCount++;
@@ -321,15 +309,26 @@ namespace CheckDiffTable.Services
                 result.Details.Add(processResult);
             }
 
-            // 4. 一括データベース操作（効率化）
-            // 新規登録・更新対象データがある場合、一括でデータベースに反映
-            // 個別のINSERT/UPDATEではなく、UPSERT操作で効率化
+            // 一括データベース操作
+            // 新規登録・更新・削除対象データがある場合、一括でデータベースに反映
+            
+            // 1. UPSERT操作（新規登録・更新）
+            // → 最新データテーブルに対して一括で新規登録・更新を行う
             if (toInsert.Any() || toUpdate.Any())
             {
                 var allToUpsert = toInsert.Concat(toUpdate).ToList();
                 await _latestDataRepository.BulkUpsertAsync(allToUpsert);
                 _logger.LogInformation("Bulk upserted {Count} records ({Insert} inserts, {Update} updates)",
                     allToUpsert.Count, toInsert.Count, toUpdate.Count);
+            }
+
+            // 2. 削除操作（差分なしトランザクション）
+            // → 差分がなかったトランザクションを一括削除
+            if (toDelete.Any())
+            {
+                var deletedCount = await _transactionRepository.DeleteSpecificTransactionsAsync(toDelete);
+                result.DeletedCount += deletedCount;
+                _logger.LogInformation("Deleted {DeletedCount} transactions with no differences from transaction table", deletedCount);
             }
         }
     }

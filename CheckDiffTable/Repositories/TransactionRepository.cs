@@ -154,5 +154,53 @@ namespace CheckDiffTable.Repositories
                 throw;
             }
         }
+        
+        /// <summary>
+        /// 指定されたトランザクションキーリストに該当するトランザクションを削除する
+        /// 差分がなかったトランザクションのクリーンアップを行う
+        /// </summary>
+        /// <param name="transactionKeys">削除対象のトランザクションキー（ID, EntityID）リスト</param>
+        /// <returns>削除された件数</returns>
+        public async Task<int> DeleteSpecificTransactionsAsync(List<(int Id, int EntityId)> transactionKeys)
+        {
+            if (!transactionKeys.Any())
+            {
+                _logger.LogInformation("No transactions to delete");
+                return 0;
+            }
+
+            // 指定されたトランザクションキーを削除
+            var sql = $@"
+                DELETE FROM {TransactionTable.TableName} 
+                WHERE ({TransactionTable.Id}, {TransactionTable.EntityId}) IN (
+                    SELECT unnest(@ids), unnest(@entityIds)
+                )";
+
+            try
+            {
+                using var connection = new NpgsqlConnection(_connectionString);
+                await connection.OpenAsync();
+                
+                using var command = new NpgsqlCommand(sql, connection);
+                
+                // パラメータ配列を準備
+                var ids = transactionKeys.Select(k => k.Id).ToArray();
+                var entityIds = transactionKeys.Select(k => k.EntityId).ToArray();
+                
+                command.Parameters.AddWithValue("@ids", ids);
+                command.Parameters.AddWithValue("@entityIds", entityIds);
+                
+                var deletedCount = await command.ExecuteNonQueryAsync();
+                
+                _logger.LogInformation("Deleted {DeletedCount} specific transactions", deletedCount);
+                
+                return deletedCount;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error deleting specific transactions");
+                throw;
+            }
+        }
     }
 }

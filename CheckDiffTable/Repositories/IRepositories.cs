@@ -24,6 +24,14 @@ namespace CheckDiffTable.Repositories
         /// <param name="processedTransactionKeys">処理済みのトランザクションキー（ID, EntityID）リスト</param>
         /// <returns>削除された件数</returns>
         Task<int> DeleteUnprocessedTransactionsAsync(List<(int Id, int EntityId)> processedTransactionKeys);
+        
+        /// <summary>
+        /// 指定されたトランザクションキーリストに該当するトランザクションを削除する
+        /// 差分がなかったトランザクションのクリーンアップを行う
+        /// </summary>
+        /// <param name="transactionKeys">削除対象のトランザクションキー（ID, EntityID）リスト</param>
+        /// <returns>削除された件数</returns>
+        Task<int> DeleteSpecificTransactionsAsync(List<(int Id, int EntityId)> transactionKeys);
     }
 
     /// <summary>
