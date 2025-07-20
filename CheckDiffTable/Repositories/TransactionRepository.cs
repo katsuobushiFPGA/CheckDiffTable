@@ -76,27 +76,28 @@ namespace CheckDiffTable.Repositories
                     });
                 }
                 
-                _logger.LogInformation("Retrieved {Count} transactions", transactions.Count);
+                _logger.LogInformation("トランザクション取得完了: {Count}件", transactions.Count);
                 return transactions;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting transactions");
+                _logger.LogError(ex, "トランザクション取得でエラーが発生しました");
                 throw;
             }
         }
-        
+
         /// <summary>
-        /// 指定されたトランザクションキーリストに該当するトランザクションを削除する
+        /// 指定されたデータベーストランザクション内で、トランザクションキーリストに該当するトランザクションを削除する
         /// 差分がなかったトランザクションのクリーンアップを行う
         /// </summary>
         /// <param name="transactionKeys">削除対象のトランザクションキー（ID, EntityID）リスト</param>
+        /// <param name="dbTransaction">使用するデータベーストランザクション</param>
         /// <returns>削除された件数</returns>
-        public async Task<int> DeleteSpecificTransactionsAsync(List<(int Id, int EntityId)> transactionKeys)
+        public async Task<int> DeleteSpecificTransactionsWithTransactionAsync(List<(int Id, int EntityId)> transactionKeys, NpgsqlTransaction dbTransaction)
         {
             if (!transactionKeys.Any())
             {
-                _logger.LogInformation("No transactions to delete");
+                _logger.LogInformation("削除対象がありません");
                 return 0;
             }
 
@@ -109,9 +110,7 @@ namespace CheckDiffTable.Repositories
 
             try
             {
-                using var connection = await _dataSource.OpenConnectionAsync();
-                
-                using var command = new NpgsqlCommand(sql, connection);
+                using var command = new NpgsqlCommand(sql, dbTransaction.Connection, dbTransaction);
                 
                 // 個別パラメータで型安全に渡す
                 for (int i = 0; i < transactionKeys.Count; i++)
@@ -123,13 +122,13 @@ namespace CheckDiffTable.Repositories
                 
                 var deletedCount = await command.ExecuteNonQueryAsync();
                 
-                _logger.LogInformation("Deleted {DeletedCount} specific transactions", deletedCount);
+                _logger.LogInformation("削除完了: {DeletedCount}件", deletedCount);
                 
                 return deletedCount;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error deleting specific transactions");
+                _logger.LogError(ex, "削除でエラーが発生しました");
                 throw;
             }
         }

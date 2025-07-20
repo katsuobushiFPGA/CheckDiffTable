@@ -102,21 +102,25 @@ namespace CheckDiffTable.Repositories
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error getting latest data for transaction keys");
+                _logger.LogError(ex, "キーによる最新データ取得でエラーが発生しました");
                 throw;
             }
         }
 
         /// <summary>
-        /// 最新データを一括でUPSERT（新規登録・更新）する
-        /// PostgreSQLのON CONFLICT機能を使用して高効率な一括処理を実現
+        /// 指定されたデータベーストランザクション内で最新データを一括でUPSERT（新規登録・更新）する
         /// 存在しないものは新規登録、存在するものは更新を行う
         /// </summary>
         /// <param name="entities">処理対象の最新データエンティティリスト</param>
+        /// <param name="dbTransaction">使用するデータベーストランザクション</param>
         /// <returns>非同期処理タスク</returns>
-        public async Task BulkUpsertAsync(List<LatestDataEntity> entities)
+        public async Task BulkUpsertWithTransactionAsync(List<LatestDataEntity> entities, NpgsqlTransaction dbTransaction)
         {
-            if (!entities.Any()) return;
+            if (!entities.Any())
+            {
+                _logger.LogInformation("UPSERT対象のエンティティがありません");
+                return;
+            }
 
             // PostgreSQLのUPSERT構文を使用した一括処理（複合主キー対応）
             var sql = new StringBuilder($@"
@@ -161,17 +165,15 @@ namespace CheckDiffTable.Repositories
 
             try
             {
-                using var connection = await _dataSource.OpenConnectionAsync();
-                
-                using var command = new NpgsqlCommand(sql.ToString(), connection);
+                using var command = new NpgsqlCommand(sql.ToString(), dbTransaction.Connection, dbTransaction);
                 command.Parameters.AddRange(parameters.ToArray());
                 
                 var rowsAffected = await command.ExecuteNonQueryAsync();
-                _logger.LogInformation("Bulk upserted {Count} entities, {RowsAffected} rows affected", entities.Count, rowsAffected);
+                _logger.LogInformation("トランザクション内一括UPSERT実行完了: {Count}エンティティ, {RowsAffected}行処理", entities.Count, rowsAffected);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Error bulk upserting {Count} entities", entities.Count);
+                _logger.LogError(ex, "トランザクション内一括UPSERT実行エラー: {Count}エンティティ", entities.Count);
                 throw;
             }
         }

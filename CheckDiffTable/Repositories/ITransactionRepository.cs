@@ -1,4 +1,5 @@
 using CheckDiffTable.Models;
+using Npgsql;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
@@ -16,13 +17,14 @@ namespace CheckDiffTable.Repositories
         /// </summary>
         /// <returns>全トランザクションのリスト</returns>
         Task<List<TransactionEntity>> GetAllTransactionsAsync();
-        
+
         /// <summary>
-        /// 指定されたトランザクションキーリストに該当するトランザクションを削除する
+        /// 指定されたデータベーストランザクション内で、トランザクションキーリストに該当するトランザクションを削除する
         /// 差分がなかったトランザクションのクリーンアップを行う
         /// </summary>
         /// <param name="transactionKeys">削除対象のトランザクションキー（ID, EntityID）リスト</param>
+        /// <param name="transaction">使用するデータベーストランザクション</param>
         /// <returns>削除された件数</returns>
-        Task<int> DeleteSpecificTransactionsAsync(List<(int Id, int EntityId)> transactionKeys);
+        Task<int> DeleteSpecificTransactionsWithTransactionAsync(List<(int Id, int EntityId)> transactionKeys, NpgsqlTransaction transaction);
     }
 }
