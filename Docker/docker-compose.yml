@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16.8
+    container_name: checkdiff_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: checkdiff_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --locale=C"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ../database_schema.sql:/docker-entrypoint-initdb.d/01_schema.sql:ro
+      - ./init-scripts:/docker-entrypoint-initdb.d:ro
+    networks:
+      - checkdiff_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d checkdiff_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # 開発用のpgAdmin（オプション）
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: checkdiff_pgadmin
+    restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@checkdiff.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "8080:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    networks:
+      - checkdiff_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
+    driver: local
+  pgadmin_data:
+    driver: local
+
+networks:
+  checkdiff_network:
+    driver: bridge
