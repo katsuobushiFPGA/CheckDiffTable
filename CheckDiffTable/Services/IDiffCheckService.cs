@@ -1,4 +1,4 @@
-using CheckDiffTable.Models;
+using CheckDiffTable.Models.Results;
 using System.Threading.Tasks;
 
 namespace CheckDiffTable.Services

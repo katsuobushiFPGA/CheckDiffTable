@@ -1,4 +1,4 @@
-namespace CheckDiffTable.Models
+namespace CheckDiffTable.Configuration
 {
     /// <summary>
     /// バッチ処理の設定オプションクラス

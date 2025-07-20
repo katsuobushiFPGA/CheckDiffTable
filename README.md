@@ -12,17 +12,24 @@ CheckDiffTable/
 ├── Program.cs                     # メインエントリーポイント
 ├── appsettings.json              # 設定ファイル
 ├── database_schema.sql           # データベーススキーマ
+├── Configuration/
+│   └── BatchProcessingOptions.cs # バッチ処理設定オプション
 ├── Models/
 │   ├── TransactionEntity.cs      # トランザクションエンティティ
 │   ├── LatestDataEntity.cs       # 最新データエンティティ
-│   ├── BatchProcessingOptions.cs # バッチ処理設定
-│   └── DatabaseConstants.cs     # データベース定数
+│   ├── DatabaseConstants.cs     # データベース定数
+│   └── Results/                  # 処理結果クラス群
+│       ├── ProcessAction.cs     # 処理アクション列挙型
+│       ├── ProcessResult.cs     # 個別処理結果クラス
+│       └── BatchProcessResult.cs # バッチ処理結果クラス
 ├── Repositories/
 │   ├── ITransactionRepository.cs # トランザクションリポジトリインターフェース
 │   ├── ILatestDataRepository.cs  # 最新データリポジトリインターフェース
 │   ├── TransactionRepository.cs  # トランザクションテーブルリポジトリ
 │   └── LatestDataRepository.cs   # 最新データテーブルリポジトリ
-└── Services/
+├── Services/
+│   ├── IDiffCheckService.cs      # 差分チェックサービスインターフェース
+│   └── DiffCheckService.cs       # 差分チェック・更新サービス
     └── DiffCheckService.cs       # 差分チェック・更新サービス
 ```
 
