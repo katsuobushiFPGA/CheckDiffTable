@@ -179,9 +179,9 @@ namespace CheckDiffTable.Services
                         // 既存データありの場合：差分チェック
                         if (existingData.HasDifference(newLatestData))
                         {
-                            // 差分あり：更新対象リストに追加（既存の作成日時を保持）
-                            var updateData = LatestDataEntity.FromTransactionForUpdate(transaction, existingData.CreatedAt);
-                            toUpdate.Add(updateData);
+                            // 差分あり：更新対象リストに追加
+                            // PostgreSQLのUPSERTにより、CreatedAtは自動保持、UpdatedAtは新しい値で更新される
+                            toUpdate.Add(newLatestData);
 
                             processResult.Action = ProcessAction.Update;
                             processResult.Message = "データ更新";
