@@ -49,6 +49,9 @@ namespace CheckDiffTable.Repositories
         {
             if (!transactionKeys.Any()) return new List<LatestDataEntity>();
 
+            // ROW構文とIN句を使った複合主キー検索（PostgreSQL標準の方法）
+            var rowValues = string.Join(", ", transactionKeys.Select((_, index) => $"(@id{index}, @entityId{index})"));
+            
             var sql = $@"
                 SELECT {LatestDataTable.Id}, 
                        {LatestDataTable.EntityId}, 
@@ -60,7 +63,7 @@ namespace CheckDiffTable.Repositories
                        {LatestDataTable.CreatedAt}, 
                        {LatestDataTable.UpdatedAt}
                 FROM {LatestDataTable.TableName} 
-                WHERE ({LatestDataTable.Id}, {LatestDataTable.EntityId}) = ANY(@transactionKeys)";
+                WHERE ({LatestDataTable.Id}, {LatestDataTable.EntityId}) IN ({rowValues})";
 
             var entities = new List<LatestDataEntity>();
 
@@ -70,12 +73,14 @@ namespace CheckDiffTable.Repositories
                 await connection.OpenAsync();
                 
                 using var command = new NpgsqlCommand(sql, connection);
-                // PostgreSQLのROW構文を使用して複合主キーのバッチ検索を実行
-                var transactionKeyArray = transactionKeys
-                    .Select(tk => new object[] { tk.Id, tk.EntityId })
-                    .ToArray();
                 
-                command.Parameters.AddWithValue("@transactionKeys", transactionKeyArray);
+                // 個別パラメータで型安全に渡す
+                for (int i = 0; i < transactionKeys.Count; i++)
+                {
+                    var key = transactionKeys[i];
+                    command.Parameters.AddWithValue($"@id{i}", key.Id);
+                    command.Parameters.AddWithValue($"@entityId{i}", key.EntityId);
+                }
                 
                 using var reader = await command.ExecuteReaderAsync();
                 
