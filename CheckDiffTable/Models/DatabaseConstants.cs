@@ -1,3 +1,5 @@
+using System;
+
 namespace CheckDiffTable.Models
 {
     /// <summary>
@@ -50,6 +52,23 @@ namespace CheckDiffTable.Models
             public const string TransactionType = "transaction_type";
             public const string CreatedAt = "created_at";
             public const string UpdatedAt = "updated_at";
+        }
+        
+        /// <summary>
+        /// 日本標準時（JST）のヘルパーメソッド
+        /// </summary>
+        public static class DateTimeHelper
+        {
+            private static readonly TimeZoneInfo JstTimeZone = TimeZoneInfo.FindSystemTimeZoneById("Tokyo Standard Time");
+            
+            /// <summary>
+            /// 現在の日本標準時を取得する
+            /// </summary>
+            /// <returns>JST時刻</returns>
+            public static DateTime GetJstNow()
+            {
+                return TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, JstTimeZone);
+            }
         }
     }
 }

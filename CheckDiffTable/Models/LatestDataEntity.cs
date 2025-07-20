@@ -60,7 +60,7 @@ namespace CheckDiffTable.Models
         /// <returns>変換後の最新データエンティティ</returns>
         public static LatestDataEntity FromTransaction(TransactionEntity transaction)
         {
-            var now = DateTime.UtcNow;
+            var now = DatabaseConstants.DateTimeHelper.GetJstNow();
             return new LatestDataEntity
             {
                 Id = transaction.Id,

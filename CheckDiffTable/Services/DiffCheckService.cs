@@ -56,7 +56,7 @@ namespace CheckDiffTable.Services
         /// <returns>処理結果（成功/失敗、件数、詳細情報を含む）</returns>
         public async Task<BatchProcessResult> ProcessAllEntitiesBatchAsync()
         {
-            var startTime = DateTime.UtcNow;
+            var startTime = DatabaseConstants.DateTimeHelper.GetJstNow();
             var result = new BatchProcessResult { Success = true };
 
             try
@@ -71,7 +71,7 @@ namespace CheckDiffTable.Services
                 {
                     _logger.LogInformation("No transactions found");
                     result.Message = "処理対象のトランザクションがありません";
-                    result.ProcessingTime = DateTime.UtcNow - startTime;
+                    result.ProcessingTime = DatabaseConstants.DateTimeHelper.GetJstNow() - startTime;
                     return result;
                 }
 
@@ -94,7 +94,7 @@ namespace CheckDiffTable.Services
                 _logger.LogInformation("All batches completed including cleanup of transactions with no differences");
 
                 // 処理完了：結果サマリーの生成とログ出力
-                result.ProcessingTime = DateTime.UtcNow - startTime;
+                result.ProcessingTime = DatabaseConstants.DateTimeHelper.GetJstNow() - startTime;
                 result.Message = $"一括処理完了: {result.TotalEntities}エンティティ処理 " +
                                $"(新規:{result.InsertCount}, 更新:{result.UpdateCount}, " +
                                $"スキップ:{result.SkipCount}, エラー:{result.ErrorCount}) " +
@@ -109,7 +109,7 @@ namespace CheckDiffTable.Services
                 // 予期しないエラーが発生した場合の処理
                 result.Success = false;
                 result.Message = $"一括処理中にエラーが発生しました: {ex.Message}";
-                result.ProcessingTime = DateTime.UtcNow - startTime;
+                result.ProcessingTime = DatabaseConstants.DateTimeHelper.GetJstNow() - startTime;
                 _logger.LogError(ex, "Batch processing failed");
                 return result;
             }
