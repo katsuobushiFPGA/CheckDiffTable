@@ -76,15 +76,16 @@ TRUNCATE TABLE transaction_table;
 
 INSERT INTO transaction_table (id, entity_id, name, description, status, amount, transaction_type, created_at, updated_at) 
 SELECT 
-    generate_series(1, 1000) as id,
-    generate_series(1, 1000) as entity_id,
-    'テスト商品' || generate_series(1, 1000) as name,
-    'テスト説明' || generate_series(1, 1000) as description,
-    CASE WHEN generate_series(1, 1000) % 2 = 0 THEN 'active' ELSE 'inactive' END as status,
-    (generate_series(1, 1000) * 100.0) as amount,
-    CASE WHEN generate_series(1, 1000) % 3 = 0 THEN 'sale' ELSE 'purchase' END as transaction_type,
+    s as id,
+    s as entity_id,
+    'テスト商品' || s as name,
+    'テスト説明' || s as description,
+    CASE WHEN s % 2 = 0 THEN 'active' ELSE 'inactive' END as status,
+    (s * 100.0) as amount,
+    CASE WHEN s % 3 = 0 THEN 'sale' ELSE 'purchase' END as transaction_type,
     CURRENT_TIMESTAMP as created_at,
-    CURRENT_TIMESTAMP as updated_at;
+    CURRENT_TIMESTAMP as updated_at
+FROM generate_series(1, 1000) as s;
 
 -- この時点でプログラム実行 → バッチ処理のパフォーマンステスト
 
