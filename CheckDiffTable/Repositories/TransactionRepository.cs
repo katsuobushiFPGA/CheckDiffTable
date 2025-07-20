@@ -103,12 +103,12 @@ namespace CheckDiffTable.Repositories
                 return 0;
             }
 
-            // 指定されたトランザクションキーを削除
+            // ROW構文とIN句を使った複合主キー削除
+            var rowValues = string.Join(", ", transactionKeys.Select((_, index) => $"(@id{index}, @entityId{index})"));
+            
             var sql = $@"
                 DELETE FROM {TransactionTable.TableName} 
-                WHERE ({TransactionTable.Id}, {TransactionTable.EntityId}) IN (
-                    SELECT unnest(@ids), unnest(@entityIds)
-                )";
+                WHERE ({TransactionTable.Id}, {TransactionTable.EntityId}) IN ({rowValues})";
 
             try
             {
@@ -117,12 +117,13 @@ namespace CheckDiffTable.Repositories
                 
                 using var command = new NpgsqlCommand(sql, connection);
                 
-                // パラメータ配列を準備
-                var ids = transactionKeys.Select(k => k.Id).ToArray();
-                var entityIds = transactionKeys.Select(k => k.EntityId).ToArray();
-                
-                command.Parameters.AddWithValue("@ids", ids);
-                command.Parameters.AddWithValue("@entityIds", entityIds);
+                // 個別パラメータで型安全に渡す
+                for (int i = 0; i < transactionKeys.Count; i++)
+                {
+                    var key = transactionKeys[i];
+                    command.Parameters.AddWithValue($"@id{i}", key.Id);
+                    command.Parameters.AddWithValue($"@entityId{i}", key.EntityId);
+                }
                 
                 var deletedCount = await command.ExecuteNonQueryAsync();
                 
